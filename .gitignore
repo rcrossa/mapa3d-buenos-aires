@@ -23,9 +23,8 @@ archived/visor_automatico.html
 archived/correction_dataset.py
 archived/unificacion_mapa.py
 archived/README.md
-archived/readme.md
 # Subdirectorios legacy
-archived/nuevo/
+archived/nuevo
 
 # ─── Variables de entorno ───
 .env
