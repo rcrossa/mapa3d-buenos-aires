@@ -11,29 +11,20 @@
 git clone git@github.com:rcrossa/mapa3d-buenos-aires.git
 cd mapa3d-buenos-aires
 
-# Configurar acceso a datos
-cp .env.example .env
-# Editar .env con DOWNLOAD_URL y DOWNLOAD_TOKEN
+# Configurar entorno (crea .venv + instala dependencias)
+./scripts/setup.sh
 
-# Descargar datos
-./scripts/download_data.sh
+# Ejecutar pipeline con dataset de muestra
+./scripts/run_sample.sh
 
-# Instalar dependencias
-pip install -r scripts/requirements.txt
-
-# Procesar
-python3 scripts/limpieza.py
-python3 scripts/calculo_solar.py
-
-# Compilar tiles
-tippecanoe -z 16 -Z 13 -pd \
-  -o data/tiles/buenos_aires_completo.pmtiles \
-  data/processed/buenos_aires_3d_completo_limpio.geojson --force
-
-# Servir
+# Servir el visor
+source .venv/bin/activate
 python3 web/server.py
 open http://localhost:8000/web/index.html
 ```
+
+> Para usar el dataset completo, configurar `.env` con las credenciales
+> de descarga y ejecutar `./scripts/download_data.sh`.
 
 ---
 
@@ -84,6 +75,14 @@ open http://localhost:8000/web/index.html
 ## Desarrollo rapido con sample
 
 ```bash
+./scripts/setup.sh       # Solo la primera vez
+./scripts/run_sample.sh  # Ejecuta todo el pipeline
+```
+
+O paso a paso:
+
+```bash
+source .venv/bin/activate
 cp data/samples/buenos_aires_3d_sample.geojson data/raw/buenos_aires_3d_base.geojson
 python3 scripts/limpieza.py
 python3 scripts/calculo_solar.py

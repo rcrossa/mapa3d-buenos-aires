@@ -16,6 +16,12 @@
 ### Dependencias Python
 
 ```bash
+# Automatico (recomendado)
+./scripts/setup.sh
+
+# Manual
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r scripts/requirements.txt
 ```
 
@@ -81,6 +87,11 @@ Abrir: http://localhost:8000/web/index.html
 ## Desarrollo con Sample
 
 ```bash
+# Un solo comando
+./scripts/run_sample.sh
+
+# O paso a paso
+source .venv/bin/activate
 cp data/samples/buenos_aires_3d_sample.geojson data/raw/buenos_aires_3d_base.geojson
 python3 scripts/limpieza.py
 python3 scripts/calculo_solar.py
