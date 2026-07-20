@@ -1,0 +1,12 @@
+{
+  "solar": {
+    "radiacion_anual_caba": 1600,
+    "eficiencia_panel": 0.20,
+    "pr": 0.80,
+    "area_por_panel": 2.0
+  },
+  "financiero": {
+    "tarifa_kwh_ars": 85.00,
+    "costo_instalacion_por_panel": 450000
+  }
+}

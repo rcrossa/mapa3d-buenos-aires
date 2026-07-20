@@ -1,41 +1,61 @@
 import geopandas as gpd
 from shapely.validation import make_valid
+import logging
 import os
 import sys
 
-# Rutas relativas a la raiz del repo
+logger = logging.getLogger(__name__)
+
+# Default paths relative to repo root
 INPUT_PATH = os.path.join("data", "raw", "buenos_aires_3d_base.geojson")
 OUTPUT_PATH = os.path.join("data", "processed", "buenos_aires_3d_completo_limpio.geojson")
 
-print("1. Cargando la base de datos maestra completa...")
-if not os.path.exists(INPUT_PATH):
-    print(f"ERROR: No se encuentra {INPUT_PATH}")
-    print("Ejecuta primero: ./scripts/download_data.sh")
-    sys.exit(1)
 
-gdf = gpd.read_file(INPUT_PATH, engine="pyogrio")
-print(f"-> Edificios cargados: {len(gdf)}")
+def run(input_path=None, output_path=None):
+    """Run the geo cleaning pipeline.
 
-if len(gdf) == 0:
-    print("ERROR CRITICO: El archivo base esta vacio.")
-    sys.exit(1)
+    Args:
+        input_path: Path to raw GeoJSON. Defaults to INPUT_PATH.
+        output_path: Path for cleaned output. Defaults to OUTPUT_PATH.
+    """
+    src = input_path or INPUT_PATH
+    dst = output_path or OUTPUT_PATH
 
-print("2. Reparando geometrias invalidas en toda la base...")
-gdf['geometry'] = gdf['geometry'].apply(
-    lambda geom: make_valid(geom) if not geom.is_valid else geom
-)
+    logger.info("1. Loading master database...")
+    if not os.path.exists(src):
+        logger.error("File not found: %s", src)
+        logger.info("Run first: ./scripts/download_data.sh")
+        sys.exit(1)
 
-print("3. Explotando MultiPoligonos a Poligonos simples...")
-gdf = gdf.explode(index_parts=False)
+    gdf = gpd.read_file(src, engine="pyogrio")
+    logger.info("-> Buildings loaded: %d", len(gdf))
 
-print("4. Forzando Sistema de Coordenadas Geograficas WGS84 (EPSG:4326)...")
-if gdf.crs is None or gdf.crs.to_epsg() != 4326:
-    gdf = gdf.to_crs(epsg=4326)
+    if len(gdf) == 0:
+        logger.critical("Input file is empty.")
+        sys.exit(1)
 
-print(f"-> Geometrias finales listas para exportar: {len(gdf)}")
+    logger.info("2. Repairing invalid geometries...")
+    gdf['geometry'] = gdf['geometry'].apply(
+        lambda geom: make_valid(geom) if not geom.is_valid else geom
+    )
 
-print(f"5. Exportando '{OUTPUT_PATH}'...")
-os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-gdf.to_file(OUTPUT_PATH, driver="GeoJSON", engine="pyogrio")
+    logger.info("3. Exploding MultiPolygons to simple Polygons...")
+    gdf = gdf.explode(index_parts=False)
 
-print("Proceso de limpieza terminado con exito!")
+    logger.info("4. Forcing CRS to WGS84 (EPSG:4326)...")
+    if gdf.crs is None or gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs(epsg=4326)
+
+    logger.info("-> Final geometries ready for export: %d", len(gdf))
+
+    logger.info("5. Exporting '%s'...", dst)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    gdf.to_file(dst, driver="GeoJSON", engine="pyogrio")
+
+    logger.info("Cleaning pipeline completed successfully!")
+
+
+if __name__ == "__main__":
+    from scripts.logging_config import setup
+    setup()
+    run()

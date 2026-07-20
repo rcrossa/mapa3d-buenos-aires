@@ -8,3 +8,6 @@ pyproj>=3.5
 
 # Servidor web con soporte Range Requests (necesario para PMTiles)
 RangeHTTPServer
+
+# Testing
+pytest>=7.0

@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
-Servidor HTTP con CORS y soporte Range Requests para desarrollo local.
-Sirve el visor web y los PMTiles desde la raiz del repositorio.
+Development HTTP server with CORS + Range Requests for PMTiles.
+Serves the web viewer and PMTiles from the repo root.
 
-Uso:
+Usage:
     python3 web/server.py
     python3 web/server.py --port 3000
+
+Note: Uses ThreadingHTTPServer for basic concurrency.
+For production, use a proper WSGI/ASGI server (gunicorn, uvicorn).
 """
 import os
 import sys
+from http.server import ThreadingHTTPServer
+
 from RangeHTTPServer import RangeRequestHandler
-from http.server import HTTPServer
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(REPO_ROOT)
@@ -29,7 +33,7 @@ if __name__ == '__main__':
     if len(sys.argv) > 2 and sys.argv[1] == '--port':
         port = int(sys.argv[2])
 
-    print(f"Servidor optimizado para PMTiles en http://localhost:{port}")
-    print(f"Visor: http://localhost:{port}/web/index.html")
-    server = HTTPServer(('localhost', port), CORSRequestHandler)
+    print(f"PMTiles dev server at http://localhost:{port}")
+    print(f"Viewer: http://localhost:{port}/web/index.html")
+    server = ThreadingHTTPServer(('localhost', port), CORSRequestHandler)
     server.serve_forever()

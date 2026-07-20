@@ -25,9 +25,7 @@ if [ -f "archived/nuevo/buenos_aires_3d_base.geojson" ]; then
 fi
 
 # Opcion 2: Descargar desde link privado
-if [ -f .env ]; then
-    source .env
-else
+if [ ! -f .env ]; then
     echo "ERROR: No se encuentra .env ni los datos en archived/"
     echo ""
     echo "Si estas en la maquina original, los datos estan en:"
@@ -39,6 +37,17 @@ else
     echo "  ./scripts/download_data.sh"
     exit 1
 fi
+
+# Safe .env parsing: only reads KEY=VALUE lines, ignores comments and blanks
+while IFS='=' read -r key value; do
+    key=$(echo "$key" | xargs)
+    value=$(echo "$value" | xargs)
+    case "$key" in
+        ''|\#*) continue ;;
+        DOWNLOAD_URL)     DOWNLOAD_URL="$value" ;;
+        DOWNLOAD_TOKEN)   DOWNLOAD_TOKEN="$value" ;;
+    esac
+done < .env
 
 if [ -z "${DOWNLOAD_URL:-}" ] || [ "$DOWNLOAD_URL" = "https://example.com/datasets" ]; then
     echo "ERROR: DOWNLOAD_URL no configurado en .env"
