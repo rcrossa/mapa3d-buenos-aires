@@ -17,6 +17,7 @@ archived/tejido.shp
 archived/tejido.shx
 archived/tejido.prj
 archived/visor_automatico.html
+archived/readme.md
 
 # ─── Variables de entorno ───
 .env
@@ -28,3 +29,4 @@ __pycache__/
 
 # ─── Sistema ───
 .DS_Store
+
