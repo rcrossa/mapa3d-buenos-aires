@@ -1,19 +1,22 @@
-# ─── Archivos geoespaciales grandes (>10 MB) ───
-# Datasets completos (se comparten via link privado)
+# ─── Datos grandes (descargar con scripts/download_data.sh) ───
+data/raw/
+data/processed/
+data/tiles/
+
+# ─── Archivos geoespaciales legacy (>10 MB en archived/) ───
 archived/buenos_aires_3d_base.geojson
 archived/nuevo/buenos_aires_3d_base.geojson
 archived/nuevo/buenos_aires_3d_completo_limpio.geojson
 archived/nuevo/buenos_aires_completo.pmtiles
 archived/parcelas_catastrales.geojson
-
-# Shapefiles de tejido urbano
 archived/tejido.dbf
 archived/tejido.shp
 archived/tejido.shx
 archived/tejido.prj
-
-# Visor legacy con datos embebidos (~156 MB)
 archived/visor_automatico.html
+
+# ─── Variables de entorno ───
+.env
 
 # ─── Python ───
 __pycache__/

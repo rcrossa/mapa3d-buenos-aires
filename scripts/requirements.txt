@@ -1,0 +1,10 @@
+# Dependencias del pipeline de datos geoespaciales
+geopandas>=0.14
+pyogrio>=0.7
+numpy>=1.24
+pandas>=2.0
+shapely>=2.0
+pyproj>=3.5
+
+# Servidor web con soporte Range Requests (necesario para PMTiles)
+RangeHTTPServer
