@@ -28,9 +28,7 @@ python3 web/server.py
 open http://localhost:8000/web/index.html
 ```
 
-> **Nota:** Los datasets completos (~6 GB) no estan en git. Si estas en la
-> maquina original, `download_data.sh` los copia de `archived/`. Si es un
-> clone fresco, necesitas el link de descarga. Solicitar a Roberto Rossa.
+> **Nota:** Los datasets completos (~6 GB) no estan en git. Deben solicitarse a Roberto Rossa.
 
 ---
 
@@ -72,7 +70,10 @@ open http://localhost:8000/web/index.html
 ## Requisitos
 
 - Python 3.9+
-- [tippecanoe](https://github.com/felt/tippecanoe) (`brew install tippecanoe`)
+- [tippecanoe](https://github.com/felt/tippecanoe)
+  - macOS: `brew install tippecanoe`
+  - Windows: `scoop install tippecanoe` o [descargar binario](https://github.com/felt/tippecanoe/releases)
+  - Linux/WSL: `sudo apt install tippecanoe`
 - curl (preinstalado)
 - Credenciales de descarga (solicitar a Roberto Rossa)
 

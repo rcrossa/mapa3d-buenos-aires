@@ -38,16 +38,7 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# Safe .env parsing: only reads KEY=VALUE lines, ignores comments and blanks
-while IFS='=' read -r key value; do
-    key=$(echo "$key" | xargs)
-    value=$(echo "$value" | xargs)
-    case "$key" in
-        ''|\#*) continue ;;
-        DOWNLOAD_URL)     DOWNLOAD_URL="$value" ;;
-        DOWNLOAD_TOKEN)   DOWNLOAD_TOKEN="$value" ;;
-    esac
-done < .env
+source scripts/source_env.sh
 
 if [ -z "${DOWNLOAD_URL:-}" ] || [ "$DOWNLOAD_URL" = "https://example.com/datasets" ]; then
     echo "ERROR: DOWNLOAD_URL no configurado en .env"
@@ -56,8 +47,33 @@ if [ -z "${DOWNLOAD_URL:-}" ] || [ "$DOWNLOAD_URL" = "https://example.com/datase
 fi
 
 echo "-> Descargando desde $DOWNLOAD_URL ..."
-curl -H "Authorization: Bearer ${DOWNLOAD_TOKEN:-}" \
-     -o data/raw/buenos_aires_3d_base.geojson \
-     "$DOWNLOAD_URL/buenos_aires_3d_base.geojson"
 
-echo "Datos descargados a data/raw/"
+# Use --fail so HTTP errors (403/404/500) are treated as failures.
+# --fail-with-body preserves the error response for debugging.
+# Token is passed via a temporary header file to avoid process-list exposure.
+AUTH_FILE=$(mktemp)
+# Sanitize token: strip newlines/carriage returns to prevent header injection
+# (curl -H @file reads lines verbatim; newlines would inject arbitrary headers)
+DOWNLOAD_TOKEN="${DOWNLOAD_TOKEN//$'\n'/}"
+DOWNLOAD_TOKEN="${DOWNLOAD_TOKEN//$'\r'/}"
+printf "Authorization: Bearer %s" "${DOWNLOAD_TOKEN:-}" > "$AUTH_FILE"
+HTTP_CODE=$(curl --fail --fail-with-body -s -w '%{http_code}' \
+    -H @"$AUTH_FILE" \
+    -o data/raw/buenos_aires_3d_base.geojson \
+    "$DOWNLOAD_URL/buenos_aires_3d_base.geojson") || {
+    rm -f "$AUTH_FILE"
+    echo "ERROR: Download failed (HTTP $HTTP_CODE)."
+    echo "Check DOWNLOAD_URL and DOWNLOAD_TOKEN in .env"
+    rm -f data/raw/buenos_aires_3d_base.geojson
+    exit 1
+}
+rm -f "$AUTH_FILE"
+
+echo "Datos descargados a data/raw/ (HTTP $HTTP_CODE)"
+
+# Validate the downloaded file is valid JSON
+if python3 -c "import json; json.load(open('data/raw/buenos_aires_3d_base.geojson'))" 2>/dev/null; then
+    echo "   Validacion: archivo JSON valido."
+else
+    echo "   ADVERTENCIA: El archivo descargado no es JSON valido."
+fi

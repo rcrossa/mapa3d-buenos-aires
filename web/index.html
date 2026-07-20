@@ -4,8 +4,13 @@
     <meta charset="utf-8">
     <title>Calculadora Solar 3D - CABA</title>
     <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
-    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <script
+        src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"
+        integrity="sha384-Subresource-Integrity-hash-not-available-replace-after-build"
+        crossorigin="anonymous"></script>
+    <link
+        href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css"
+        rel="stylesheet" />
     <style>
         body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         #map { position: absolute; top: 0; bottom: 0; width: 100%; }
@@ -29,12 +34,22 @@
 <div id="map"></div>
 
 <script src="config.js"></script>
-<script src="https://unpkg.com/pmtiles@2.11.0/dist/index.js"></script>
+<script
+    src="https://unpkg.com/pmtiles@2.11.0/dist/index.js"
+    integrity="sha384-Subresource-Integrity-hash-not-available-replace-after-build"
+    crossorigin="anonymous"></script>
 <script>
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    }
+
     let protocol = new pmtiles.Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
 
     const PMTILES_URL = PMTILES_CONFIG.url;
+    const SOURCE_LAYER = PMTILES_CONFIG.sourceLayer || 'buenos_aires_3d_completo_limpio';
 
     const map = new maplibregl.Map({
         container: 'map',
@@ -55,6 +70,11 @@
             intensity: 0.4
         });
 
+        if (!PMTILES_URL) {
+            console.warn("PMTiles URL is null. Map will load without 3D buildings.");
+            return;
+        }
+
         map.addSource('buenos-aires-techos', {
             'type': 'vector',
             'url': 'pmtiles://' + PMTILES_URL
@@ -64,7 +84,7 @@
             'id': 'techos-3d',
             'type': 'fill-extrusion',
             'source': 'buenos-aires-techos',
-            'source-layer': 'buenos_aires_3d_completo_limpio',
+            'source-layer': SOURCE_LAYER,
             'paint': {
                 'fill-extrusion-color': [
                     'interpolate', ['linear'], ['get', 'area_util'],
@@ -83,22 +103,24 @@
         map.on('mouseleave', 'techos-3d', () => map.getCanvas().style.cursor = '');
 
         map.on('click', 'techos-3d', (e) => {
-            const props = e.features[0].properties;
+            if (!e.features || !e.features.length) return;
+            var props = e.features[0].properties || {};
 
-            const energia = props.energia_anual_kwh ? props.energia_anual_kwh.toLocaleString('es-AR') : '0';
-            const ahorro = props.ahorro_anual_ars ? props.ahorro_anual_ars.toLocaleString('es-AR') : '0';
-            const costo = props.costo_instalacion_ars ? props.costo_instalacion_ars.toLocaleString('es-AR') : '0';
-            const payback = props.payback_anios || '0';
+            var energia = props.energia_anual_kwh != null
+                ? props.energia_anual_kwh.toLocaleString('es-AR') : '0';
+            var ahorro = props.ahorro_anual_ars != null
+                ? props.ahorro_anual_ars.toLocaleString('es-AR') : '0';
+            var costo = props.costo_instalacion_ars != null
+                ? props.costo_instalacion_ars.toLocaleString('es-AR') : '0';
+            var payback = props.payback_anios != null ? props.payback_anios : '0';
 
-            const html = `
-                <div class="solar-card">
-                    <h3>☀️ Potencial Solar</h3>
-                    <p><strong>Generacion Est.:</strong> ${energia} kWh/anio</p>
-                    <p><strong>Inversion inicial:</strong> $${costo}</p>
-                    <p><strong>Recupero (Payback):</strong> ${payback} anios</p>
-                    <p class="highlight">💰 Ahorro: $${ahorro} /anio</p>
-                </div>
-            `;
+            var html = '<div class="solar-card">' +
+                '<h3>☀️ ' + escapeHtml('Potencial Solar') + '</h3>' +
+                '<p><strong>Generacion Est.:</strong> ' + escapeHtml(energia) + ' kWh/anio</p>' +
+                '<p><strong>Inversion inicial:</strong> $' + escapeHtml(costo) + '</p>' +
+                '<p><strong>Recupero (Payback):</strong> ' + escapeHtml(String(payback)) + ' anios</p>' +
+                '<p class="highlight">💰 Ahorro: $' + escapeHtml(ahorro) + ' /anio</p>' +
+                '</div>';
 
             new maplibregl.Popup({ closeButton: false })
                 .setLngLat(e.lngLat)

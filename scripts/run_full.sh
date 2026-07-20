@@ -3,6 +3,7 @@
 #   Si estas en la maquina original: copia desde archived/ (~6 GB locales)
 #   Si es un clone fresco: requiere ./scripts/download_data.sh primero
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
 if [ -f ".venv/bin/activate" ]; then
     source .venv/bin/activate
@@ -13,10 +14,18 @@ echo "=== Pipeline Mapa 3D (datos reales CABA) ==="
 # Paso 1: Obtener datos fuente
 echo "1. Preparando datos fuente..."
 
+source scripts/source_env.sh
+
 FOUND=false
 if [ -f "archived/nuevo/buenos_aires_3d_base.geojson" ]; then
     echo "   Encontrado en archived/ (local), copiando..."
-    cp archived/nuevo/buenos_aires_3d_base.geojson data/raw/
+    if [ -f "data/raw/buenos_aires_3d_base.geojson" ] \
+       && cmp -s "archived/nuevo/buenos_aires_3d_base.geojson" \
+                 "data/raw/buenos_aires_3d_base.geojson"; then
+        echo "   (identico a archived/, skip copy)"
+    else
+        cp archived/nuevo/buenos_aires_3d_base.geojson data/raw/
+    fi
     FOUND=true
 elif [ -f "data/raw/buenos_aires_3d_base.geojson" ]; then
     echo "   Ya existe en data/raw/"
@@ -52,11 +61,19 @@ python3 scripts/calculo_solar.py
 # Compilar PMTiles (si tippecanoe esta instalado)
 if command -v tippecanoe &>/dev/null; then
     echo "4. Compilando PMTiles..."
-    tippecanoe -z 16 -Z 13 -pd \
+    if tippecanoe -z 16 -Z 13 -pd \
         -o data/tiles/buenos_aires_completo.pmtiles \
         data/processed/buenos_aires_3d_completo_limpio.geojson \
-        --force
-    echo "   PMTiles: $(ls -lh data/tiles/buenos_aires_completo.pmtiles | awk '{print $5}')"
+        --force; then
+        echo "   PMTiles: $(ls -lh data/tiles/buenos_aires_completo.pmtiles | awk '{print $5}')"
+    elif [ -f "archived/nuevo/buenos_aires_completo.pmtiles" ]; then
+        echo "   tippecanoe fallo. Usando PMTiles pre-compilados..."
+        cp archived/nuevo/buenos_aires_completo.pmtiles data/tiles/
+        echo "   PMTiles: $(ls -lh data/tiles/buenos_aires_completo.pmtiles | awk '{print $5}')"
+    else
+        echo "   ERROR: tippecanoe fallo y no hay PMTiles pre-compilados."
+        exit 1
+    fi
 elif [ -f "archived/nuevo/buenos_aires_completo.pmtiles" ]; then
     echo "4. tippecanoe no instalado. Copiando PMTiles pre-compilados..."
     cp archived/nuevo/buenos_aires_completo.pmtiles data/tiles/

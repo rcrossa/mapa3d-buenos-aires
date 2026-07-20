@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "solar": {
     "radiacion_anual_caba": 1600,
     "eficiencia_panel": 0.20,
