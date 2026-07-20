@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Calculadora Solar 3D - CABA</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        
+        .maplibregl-popup-content {
+            background-color: #1e1e1e;
+            color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            padding: 15px;
+            min-width: 220px;
+            border: 1px solid #333;
+        }
+        .solar-card h3 { margin: 0 0 10px 0; color: #f1c40f; font-size: 18px; border-bottom: 1px solid #444; padding-bottom: 8px;}
+        .solar-card p { margin: 8px 0; font-size: 14px; color: #ccc; }
+        .solar-card .highlight { color: #2ecc71; font-weight: bold; font-size: 16px; margin-top: 12px;}
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/pmtiles@2.11.0/dist/index.js"></script>
+<script>
+    // 2. Registrar el protocolo de lectura binaria al inicio de tu JavaScript
+    let protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+
+    // Definir la ruta del archivo compilado en tu servidor local
+    const PMTILES_URL = "http://localhost:8000/buenos_aires_completo.pmtiles";
+
+    const map = new maplibregl.Map({
+        container: 'map',
+        // 1. Dark Mode
+        style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json', 
+        center: [-58.3925, -34.5915],
+        zoom: 16,
+        pitch: 60,
+        bearing: 0
+    });
+
+    // Agregamos controles de navegación y brújula
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+
+    map.on('load', () => {
+        // 2. Luz artificial para acentuar el 3D
+        map.setLight({
+            anchor: "map",
+            position: [1.15, 210, 30],
+            color: "#fdb813",
+            intensity: 0.4
+        });
+
+        map.addSource('buenos-aires-techos', {
+            'type': 'vector',
+            'url': 'pmtiles://' + PMTILES_URL
+        });
+
+        map.addLayer({
+            'id': 'techos-3d',
+            'type': 'fill-extrusion',
+            'source': 'buenos-aires-techos',
+            'source-layer': 'buenos_aires_3d_completo_limpio',
+            'paint': {
+                // 3. Data-Driven Styling (Mapa de calor real)
+                'fill-extrusion-color': [
+                    'interpolate', ['linear'], ['get', 'area_util'],
+                    0, '#2c3e50',      // Gris oscuro (Sin potencial)
+                    40, '#f1c40f',     // Amarillo (Bajo)
+                    100, '#e67e22',    // Naranja (Medio)
+                    250, '#e74c3c'     // Rojo (Alto potencial)
+                ],
+                'fill-extrusion-height': ['get', 'altura'], 
+                'fill-extrusion-base': 0,
+                // 4. Opacidad para ver la profundidad urbana
+                'fill-extrusion-opacity': 0.85
+            }
+        });
+
+        map.on('mouseenter', 'techos-3d', () => map.getCanvas().style.cursor = 'pointer');
+        map.on('mouseleave', 'techos-3d', () => map.getCanvas().style.cursor = '');
+
+        map.on('click', 'techos-3d', (e) => {
+            const props = e.features[0].properties;
+            
+            // Leemos los nuevos valores financieros
+            const energia = props.energia_anual_kwh ? props.energia_anual_kwh.toLocaleString('es-AR') : '0';
+            const ahorro = props.ahorro_anual_ars ? props.ahorro_anual_ars.toLocaleString('es-AR') : '0';
+            const costo = props.costo_instalacion_ars ? props.costo_instalacion_ars.toLocaleString('es-AR') : '0';
+            const payback = props.payback_anios || '0';
+
+            const html = `
+                <div class="solar-card">
+                    <h3>☀️ Potencial Solar</h3>
+                    <p><strong>Generación Est.:</strong> ${energia} kWh/año</p>
+                    <p><strong>Inversión inicial:</strong> $${costo}</p>
+                    <p><strong>Recupero (Payback):</strong> ${payback} años</p>
+                    <p class="highlight">💰 Ahorro: $${ahorro} /año</p>
+                </div>
+            `;
+
+            new maplibregl.Popup({ closeButton: false })
+                .setLngLat(e.lngLat)
+                .setHTML(html)
+                .addTo(map);
+        });
+    });
+</script>
+</body>
+</html>
