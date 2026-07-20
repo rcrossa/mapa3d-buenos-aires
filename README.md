@@ -14,8 +14,13 @@ cd mapa3d-buenos-aires
 # Configurar entorno (crea .venv + instala dependencias)
 ./scripts/setup.sh
 
-# Ejecutar pipeline con dataset de muestra
+# Obtener datos y ejecutar pipeline:
+#   Opcion A: datos de muestra (50 edificios, no requiere descarga)
 ./scripts/run_sample.sh
+
+#   Opcion B: datos completos (~1.2 GB, requiere link de descarga)
+./scripts/download_data.sh   # copia de archived/ local o descarga web
+./scripts/run_full.sh        # pipeline completo + PMTiles
 
 # Servir el visor
 source .venv/bin/activate
@@ -23,8 +28,9 @@ python3 web/server.py
 open http://localhost:8000/web/index.html
 ```
 
-> Para usar el dataset completo, configurar `.env` con las credenciales
-> de descarga y ejecutar `./scripts/download_data.sh`.
+> **Nota:** Los datasets completos (~6 GB) no estan en git. Si estas en la
+> maquina original, `download_data.sh` los copia de `archived/`. Si es un
+> clone fresco, necesitas el link de descarga. Solicitar a Roberto Rossa.
 
 ---
 
