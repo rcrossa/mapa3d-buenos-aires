@@ -6,25 +6,8 @@ data/processed/*
 data/tiles/*
 !data/tiles/.gitkeep
 
-# ─── Archivos legacy en archived/ ───
-# Grande archivos geoespaciales (>10 MB)
-archived/buenos_aires_3d_base.geojson
-archived/buenos_aires_3d_sample.geojson
-archived/nuevo/buenos_aires_3d_base.geojson
-archived/nuevo/buenos_aires_3d_completo_limpio.geojson
-archived/nuevo/buenos_aires_completo.pmtiles
-archived/parcelas_catastrales.geojson
-archived/tejido.dbf
-archived/tejido.shp
-archived/tejido.shx
-archived/tejido.prj
-archived/visor_automatico.html
-# Legacy scripts y docs
-archived/correction_dataset.py
-archived/unificacion_mapa.py
-archived/README.md
-# Subdirectorios legacy
-archived/nuevo/
+# ─── Codigo legacy (referencia, no necesario para el producto) ───
+archived/
 
 # ─── Variables de entorno ───
 .env
