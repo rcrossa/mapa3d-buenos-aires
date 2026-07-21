@@ -60,6 +60,20 @@ def run(input_path=None, output_path=None):
         logger.critical("Input file is empty.")
         raise ValueError(f"Input file is empty: {src}")
 
+    # Idempotency guard: prevent re-processing already-cleaned data.
+    # Re-running would re-repair geometries (possibly producing different
+    # results across Shapely versions), re-explode MultiPolygons, and
+    # overwrite pipeline metadata timestamps.
+    if "_pipeline_stage" in gdf.columns:
+        logger.error(
+            "Input file already processed (has '_pipeline_stage' column). "
+            "Re-running would re-repair/re-explode and may cause data drift. "
+            "Run on the original raw data if you need a fresh clean."
+        )
+        raise ValueError(
+            "Input already cleaned — re-running may cause data drift."
+        )
+
     logger.info("2. Repairing invalid geometries...")
     # Vectorized: only repair invalid geometries (avoids per-row Python dispatch).
     # On the full 100K+ building dataset this is 10-50\u00d7 faster than .apply().
@@ -82,6 +96,26 @@ def run(input_path=None, output_path=None):
 
     logger.info("3. Exploding MultiPolygons to simple Polygons...")
     gdf = gdf.explode(index_parts=False)
+
+    # Fix area_util double-counting: explode duplicates area_util for each
+    # polygon part. Divide proportionally so sums stay correct downstream.
+    if "area_util" in gdf.columns:
+        multi_mask = gdf.index.duplicated(keep=False)
+        if multi_mask.any():
+            part_counts = (
+                gdf.loc[multi_mask]
+                .groupby(level=0)
+                .size()
+            )
+            gdf.loc[multi_mask, 'area_util'] = (
+                gdf.loc[multi_mask, 'area_util']
+                / part_counts.reindex(gdf.loc[multi_mask].index).values
+            )
+            logger.info(
+                "-> Divided area_util proportionally for %d exploded "
+                "MultiPolygon rows.",
+                multi_mask.sum(),
+            )
 
     logger.info("4. Forcing CRS to WGS84 (EPSG:4326)...")
     if gdf.crs is None:

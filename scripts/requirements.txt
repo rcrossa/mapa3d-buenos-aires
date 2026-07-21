@@ -7,7 +7,7 @@ shapely>=2.0
 pyproj>=3.5
 
 # Servidor web con soporte Range Requests (necesario para PMTiles)
-RangeHTTPServer
+RangeHTTPServer>=1.4,<2.0
 
 # Testing
 pytest>=7.0

@@ -14,6 +14,7 @@ For production, use a proper WSGI/ASGI server (gunicorn, uvicorn).
 import os
 import sys
 from http.server import ThreadingHTTPServer
+from urllib.parse import unquote
 
 from RangeHTTPServer import RangeRequestHandler
 
@@ -28,12 +29,20 @@ class CORSRequestHandler(RangeRequestHandler):
     _BLOCKED_PREFIXES = ('scripts/', 'tests/', 'archived/', '.git/')
 
     def do_GET(self):
-        path = self.path.lstrip('/')
-        if path in self._BLOCKED_PATHS:
+        # Decode %-encoding and resolve the real filesystem path to prevent
+        # bypasses like %2e%2e/.env or /web/../.env evading string checks.
+        raw = self.path.split('?')[0].split('#')[0]
+        decoded = unquote(raw)
+        resolved = os.path.realpath(
+            os.path.join(os.getcwd(), decoded.lstrip('/'))
+        )
+        rel = os.path.relpath(resolved, os.getcwd())
+
+        if os.path.basename(rel) in self._BLOCKED_PATHS:
             self.send_error(403, "Forbidden")
             return
         for prefix in self._BLOCKED_PREFIXES:
-            if path.startswith(prefix):
+            if rel.startswith(prefix.rstrip('/')):
                 self.send_error(403, "Forbidden")
                 return
         super().do_GET()
