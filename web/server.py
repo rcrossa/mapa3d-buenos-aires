@@ -18,7 +18,7 @@ from urllib.parse import unquote
 
 from RangeHTTPServer import RangeRequestHandler
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class CORSRequestHandler(RangeRequestHandler):
@@ -38,21 +38,34 @@ class CORSRequestHandler(RangeRequestHandler):
 
     def __init__(self, *args, **kwargs):
         # Injectable for testing — pop before passing to base class.
-        self._blocked_basenames = kwargs.pop(
-            'blocked_basenames', self._BLOCKED_BASENAMES)
-        self._blocked_basename_prefixes = kwargs.pop(
+        # Force lowercase for case-insensitive matching (macOS APFS).
+        basenames = kwargs.pop('blocked_basenames', self._BLOCKED_BASENAMES)
+        if isinstance(basenames, str):
+            raise TypeError(
+                'blocked_basenames must be a set/frozenset, not a string')
+        self._blocked_basenames = {b.lower() for b in basenames}
+        prefix_tup = kwargs.pop(
             'blocked_basename_prefixes', self._BLOCKED_BASENAME_PREFIXES)
-        self._blocked_prefixes = kwargs.pop(
+        if isinstance(prefix_tup, str):
+            raise TypeError(
+                'blocked_basename_prefixes must be a tuple, not a string')
+        self._blocked_basename_prefixes = tuple(
+            p.lower() for p in prefix_tup)
+        prefixes = kwargs.pop(
             'blocked_prefixes', self._BLOCKED_PREFIXES)
+        if isinstance(prefixes, str):
+            raise TypeError(
+                'blocked_prefixes must be a tuple, not a string')
+        self._blocked_prefixes = tuple(p.lower() for p in prefixes)
         super().__init__(*args)
 
     def _is_path_blocked(self):
         """Return True if self.path is blocked (403 already sent).
 
-        Always resolves the real filesystem path so symlinks and case-
-        insensitive filesystems cannot bypass the block list.  The one
-        ``realpath`` syscall is unavoidable — ``translate_path`` inside
-        ``super().do_GET`` also calls it.
+        Resolves the real filesystem path so symlinks and case-insensitive
+        filesystems cannot bypass the block list.  The resolved path is
+        cached on ``self._resolved_path`` so ``translate_path()`` reuses it
+        — avoiding a wasteful second ``realpath()`` syscall.
         """
         raw = self.path.split('?')[0].split('#')[0]
         decoded = unquote(raw)
@@ -61,8 +74,8 @@ class CORSRequestHandler(RangeRequestHandler):
         if not clean:
             return False  # root — allow directory listing
 
-        # Resolve the real on-disk path (catches symlinks, case differences,
-        # .. traversal, and Unicode normalisation in one shot).
+        # Single realpath() syscall per request (catches symlinks, case
+        # differences, .. traversal, and Unicode normalisation in one shot).
         try:
             candidate = os.path.join(REPO_ROOT, clean)
             resolved = os.path.realpath(candidate)
@@ -95,7 +108,27 @@ class CORSRequestHandler(RangeRequestHandler):
                 self.send_error(403, "Forbidden")
                 return True
 
+        # Cache so translate_path() reuses this — no second realpath().
+        self._resolved_path = resolved
         return False
+
+    def translate_path(self, path):
+        """Resolve against REPO_ROOT, reusing cached path when available.
+
+        Overrides SimpleHTTPRequestHandler.translate_path() which uses
+        os.getcwd() (process-global mutable state).  When _is_path_blocked()
+        has already resolved the path we return the cached value directly,
+        eliminating a wasteful second realpath() syscall.
+        """
+        cached = getattr(self, '_resolved_path', None)
+        if cached is not None:
+            del self._resolved_path  # one-shot — prevent cross-request leak
+            return cached
+        # Fallback (do_GET/do_HEAD always call _is_path_blocked first, so
+        # this path is only reached by direct translate_path() callers).
+        path = path.split('?', 1)[0].split('#', 1)[0]
+        path = unquote(path)
+        return os.path.realpath(os.path.join(REPO_ROOT, path.lstrip('/')))
 
     def do_GET(self):
         if self._is_path_blocked():

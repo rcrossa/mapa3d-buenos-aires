@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # pylint: disable=import-error,wrong-import-position
-from web.server import CORSRequestHandler, REPO_ROOT
+from web.server import CORSRequestHandler
 
 
 class TestPathBlocking(unittest.TestCase):
@@ -23,16 +23,23 @@ class TestPathBlocking(unittest.TestCase):
     # ------------------------------------------------------------------
     @staticmethod
     def _make_handler(path, **kwargs):
-        """Create a bare handler with a mocked path and send_error."""
+        """Create a bare handler with a mocked path and send_error.
+
+        Mirrors __init__ lowercasing so tests exercise the same code path.
+        """
         handler = CORSRequestHandler.__new__(CORSRequestHandler)
         handler.path = path
         handler.send_error = MagicMock()
-        handler._blocked_basenames = kwargs.pop(
-            'blocked_basenames', CORSRequestHandler._BLOCKED_BASENAMES)
-        handler._blocked_basename_prefixes = kwargs.pop(
-            'blocked_basename_prefixes', CORSRequestHandler._BLOCKED_BASENAME_PREFIXES)
-        handler._blocked_prefixes = kwargs.pop(
-            'blocked_prefixes', CORSRequestHandler._BLOCKED_PREFIXES)
+        handler._blocked_basenames = {
+            b.lower() for b in kwargs.pop(
+                'blocked_basenames', CORSRequestHandler._BLOCKED_BASENAMES)}
+        handler._blocked_basename_prefixes = tuple(
+            p.lower() for p in kwargs.pop(
+                'blocked_basename_prefixes',
+                CORSRequestHandler._BLOCKED_BASENAME_PREFIXES))
+        handler._blocked_prefixes = tuple(
+            p.lower() for p in kwargs.pop(
+                'blocked_prefixes', CORSRequestHandler._BLOCKED_PREFIXES))
         return handler
 
     def assert_blocked(self, path, **kwargs):
@@ -209,6 +216,90 @@ class TestPathBlocking(unittest.TestCase):
                             blocked_basenames=custom,
                             blocked_basename_prefixes=())
         self.assert_blocked('/custom-secret.txt', blocked_basenames=custom)
+
+    # ------------------------------------------------------------------
+    # R9 CRITICAL C1 — mixed-case injection (lowercasing in _make_handler
+    # mirrors __init__ so injection path is exercised)
+    # ------------------------------------------------------------------
+    def test_injectable_mixed_case_basenames(self):
+        """Mixed-case blocked_basenames must still block (C1 fix)."""
+        self.assert_blocked('/Secret.txt',
+                            blocked_basenames={'Secret.txt'})
+
+    def test_injectable_mixed_case_prefixes(self):
+        """Mixed-case blocked_basename_prefixes must still block."""
+        self.assert_blocked('/.Env.Backup',
+                            blocked_basename_prefixes=('.Env',))
+
+    def test_injectable_mixed_case_dirs(self):
+        """Mixed-case blocked_prefixes must still block (R10 fix)."""
+        self.assert_blocked('/scripts/secret.py',
+                            blocked_prefixes=('Scripts/',))
+
+    def test_default_basenames_are_lowercase(self):
+        """Default _BLOCKED_BASENAMES must stay all-lowercase for
+        case-insensitive matching to work."""
+        for name in CORSRequestHandler._BLOCKED_BASENAMES:
+            self.assertEqual(name, name.lower(),
+                             f"'{name}' in _BLOCKED_BASENAMES is not lowercase")
+
+    # ------------------------------------------------------------------
+    # R10 — string-as-iterable guard + REPO_ROOT realpath + translate_path
+    # ------------------------------------------------------------------
+    def test_string_basenames_raises_typeerror(self):
+        """Bare string for blocked_basenames must raise TypeError."""
+        with self.assertRaises(TypeError):
+            CORSRequestHandler.__init__(
+                CORSRequestHandler.__new__(CORSRequestHandler),
+                blocked_basenames='Secret.txt')
+
+    def test_string_prefixes_raises_typeerror(self):
+        """Bare string for blocked_basename_prefixes must raise TypeError."""
+        with self.assertRaises(TypeError):
+            CORSRequestHandler.__init__(
+                CORSRequestHandler.__new__(CORSRequestHandler),
+                blocked_basename_prefixes='.env')
+
+    def test_string_blocked_prefixes_raises_typeerror(self):
+        """Bare string for blocked_prefixes must raise TypeError (R10 fix)."""
+        with self.assertRaises(TypeError):
+            CORSRequestHandler.__init__(
+                CORSRequestHandler.__new__(CORSRequestHandler),
+                blocked_prefixes='scripts/')
+
+    def test_translate_path_consumes_cache(self):
+        """translate_path() must return the cached _resolved_path."""
+        import os as _os
+        h = self._make_handler('/web/index.html')
+        h._is_path_blocked()
+        # After _is_path_blocked, _resolved_path must be set.
+        self.assertTrue(hasattr(h, '_resolved_path'))
+        cached = h._resolved_path
+        self.assertEqual(cached, _os.path.realpath(
+            _os.path.join(
+                _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                'web/index.html')))
+        # translate_path must return the cached value and delete it.
+        result = h.translate_path('/web/index.html')
+        self.assertEqual(result, cached)
+        self.assertFalse(hasattr(h, '_resolved_path'))
+
+    def test_translate_path_fallback_when_no_cache(self):
+        """translate_path() must work even without cached _resolved_path."""
+        import os as _os
+        h = self._make_handler('/web/index.html')
+        # No _is_path_blocked call, so no cache.
+        result = h.translate_path('/web/index.html')
+        expected = _os.path.realpath(
+            _os.path.join(
+                _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                'web/index.html'))
+        self.assertEqual(result, expected)
+
+    def test_repo_root_is_realpath(self):
+        """REPO_ROOT must be the canonical realpath (R10 fix)."""
+        from web.server import REPO_ROOT
+        self.assertEqual(REPO_ROOT, os.path.realpath(REPO_ROOT))
 
 
 if __name__ == '__main__':
