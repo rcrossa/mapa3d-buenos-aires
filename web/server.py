@@ -28,24 +28,52 @@ class CORSRequestHandler(RangeRequestHandler):
     })
     _BLOCKED_PREFIXES = ('scripts/', 'tests/', 'archived/', '.git/')
 
-    def do_GET(self):
-        # Decode %-encoding and resolve the real filesystem path to prevent
-        # bypasses like %2e%2e/.env or /web/../.env evading string checks.
+    def _is_path_blocked(self):
+        """Return True if self.path is blocked (403 already sent)."""
         raw = self.path.split('?')[0].split('#')[0]
         decoded = unquote(raw)
-        resolved = os.path.realpath(
-            os.path.join(os.getcwd(), decoded.lstrip('/'))
-        )
-        rel = os.path.relpath(resolved, os.getcwd())
 
+        # Fast-path: no suspicious chars — string-check directly,
+        # avoiding filesystem syscalls on every PMTiles tile request.
+        if '..' not in decoded and '%' not in raw and '~' not in decoded:
+            clean = decoded.lstrip('/')
+            if os.path.basename(clean) in self._BLOCKED_PATHS:
+                self.send_error(403, "Forbidden")
+                return True
+            for prefix in self._BLOCKED_PREFIXES:
+                if clean.startswith(prefix.rstrip('/')):
+                    self.send_error(403, "Forbidden")
+                    return True
+            return False
+
+        # Slow-path: paths with .., %, or ~ need realpath resolution.
+        candidate = os.path.join(REPO_ROOT, decoded.lstrip('/'))
+        resolved = os.path.realpath(candidate)
+
+        # Block traversal outside REPO_ROOT (e.g., /../../../etc/passwd).
+        if os.path.commonpath([resolved, REPO_ROOT]) != REPO_ROOT:
+            self.send_error(403, "Forbidden")
+            return True
+
+        rel = os.path.relpath(resolved, REPO_ROOT)
         if os.path.basename(rel) in self._BLOCKED_PATHS:
             self.send_error(403, "Forbidden")
-            return
+            return True
         for prefix in self._BLOCKED_PREFIXES:
             if rel.startswith(prefix.rstrip('/')):
                 self.send_error(403, "Forbidden")
-                return
+                return True
+        return False
+
+    def do_GET(self):
+        if self._is_path_blocked():
+            return
         super().do_GET()
+
+    def do_HEAD(self):
+        if self._is_path_blocked():
+            return
+        super().do_HEAD()
 
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
