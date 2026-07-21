@@ -22,10 +22,16 @@
 
   var finalUrl = queryUrl || defaultUrl;
 
-  // Validate: only allow http/https/pmtiles schemes
-  if (finalUrl && !/^(https?:\/\/|pmtiles:\/\/)/.test(finalUrl)) {
+  // Normalize: replace pmtiles:// with https:// (pmtiles fetches over HTTP).
+  // index.html unconditionally prepends pmtiles:// for the MapLibre protocol.
+  if (finalUrl && finalUrl.startsWith('pmtiles://')) {
+    finalUrl = finalUrl.replace('pmtiles://', 'https://');
+  }
+
+  // Validate: only allow http/https schemes (pmtiles:// already stripped above).
+  if (finalUrl && !/^https?:\/\//.test(finalUrl)) {
     console.error(
-      "Invalid pmtiles_url scheme. Only http/https/pmtiles allowed: " +
+      "Invalid pmtiles_url scheme. Only http/https allowed: " +
         finalUrl
     );
     finalUrl = null;
@@ -34,7 +40,10 @@
   // Hostname allowlist: warn if pmtiles_url host differs from page host
   if (finalUrl) {
     var urlHost;
-    try { urlHost = new URL(finalUrl).hostname; } catch (e) { urlHost = null; }
+    try { urlHost = new URL(finalUrl).hostname; } catch (e) {
+      console.warn("Invalid pmtiles_url, skipping cross-origin check:", e);
+      urlHost = null;
+    }
     if (urlHost && urlHost !== window.location.hostname && urlHost !== 'localhost' && !urlHost.endsWith('.localhost')) {
       console.warn(
         "pmtiles_url host '" + urlHost + "' differs from page host. " +
@@ -61,6 +70,6 @@
 
   window.PMTILES_CONFIG = {
     url: finalUrl,
-    sourceLayer: params.get("source_layer") || null,
+    sourceLayer: params.get("source_layer") ?? null,
   };
 })();

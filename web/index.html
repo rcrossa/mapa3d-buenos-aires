@@ -6,7 +6,6 @@
     <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
     <script
         src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"
-        integrity="sha384-Subresource-Integrity-hash-not-available-replace-after-build"
         crossorigin="anonymous"></script>
     <link
         href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css"
@@ -36,7 +35,6 @@
 <script src="config.js"></script>
 <script
     src="https://unpkg.com/pmtiles@2.11.0/dist/index.js"
-    integrity="sha384-Subresource-Integrity-hash-not-available-replace-after-build"
     crossorigin="anonymous"></script>
 <script>
     function escapeHtml(str) {
@@ -104,15 +102,21 @@
 
         map.on('click', 'techos-3d', (e) => {
             if (!e.features || !e.features.length) return;
+            try {
             var props = e.features[0].properties || {};
 
-            var energia = props.energia_anual_kwh != null
+            var energia = (typeof props.energia_anual_kwh === 'number'
+                && !isNaN(props.energia_anual_kwh))
                 ? props.energia_anual_kwh.toLocaleString('es-AR') : '0';
-            var ahorro = props.ahorro_anual_ars != null
+            var ahorro = (typeof props.ahorro_anual_ars === 'number'
+                && !isNaN(props.ahorro_anual_ars))
                 ? props.ahorro_anual_ars.toLocaleString('es-AR') : '0';
-            var costo = props.costo_instalacion_ars != null
+            var costo = (typeof props.costo_instalacion_ars === 'number'
+                && !isNaN(props.costo_instalacion_ars))
                 ? props.costo_instalacion_ars.toLocaleString('es-AR') : '0';
-            var payback = props.payback_anios != null ? props.payback_anios : '0';
+            var payback = (typeof props.payback_anios === 'number'
+                && !isNaN(props.payback_anios))
+                ? props.payback_anios : '0';
 
             var html = '<div class="solar-card">' +
                 '<h3>☀️ ' + escapeHtml('Potencial Solar') + '</h3>' +
@@ -126,6 +130,9 @@
                 .setLngLat(e.lngLat)
                 .setHTML(html)
                 .addTo(map);
+            } catch (popupErr) {
+                console.warn("Failed to render popup:", popupErr);
+            }
         });
     });
 </script>
