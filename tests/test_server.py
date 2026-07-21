@@ -25,21 +25,22 @@ class TestPathBlocking(unittest.TestCase):
     def _make_handler(path, **kwargs):
         """Create a bare handler with a mocked path and send_error.
 
-        Mirrors __init__ lowercasing so tests exercise the same code path.
+        Uses _setup_blocked_sets() — the same helper as __init__ — so
+        lowercasing and validation are always in sync.
         """
         handler = CORSRequestHandler.__new__(CORSRequestHandler)
         handler.path = path
         handler.send_error = MagicMock()
-        handler._blocked_basenames = {
-            b.lower() for b in kwargs.pop(
-                'blocked_basenames', CORSRequestHandler._BLOCKED_BASENAMES)}
-        handler._blocked_basename_prefixes = tuple(
-            p.lower() for p in kwargs.pop(
-                'blocked_basename_prefixes',
-                CORSRequestHandler._BLOCKED_BASENAME_PREFIXES))
-        handler._blocked_prefixes = tuple(
-            p.lower() for p in kwargs.pop(
-                'blocked_prefixes', CORSRequestHandler._BLOCKED_PREFIXES))
+        basenames = kwargs.pop('blocked_basenames',
+                               CORSRequestHandler._BLOCKED_BASENAMES)
+        prefix_tup = kwargs.pop('blocked_basename_prefixes',
+                                CORSRequestHandler._BLOCKED_BASENAME_PREFIXES)
+        prefixes = kwargs.pop('blocked_prefixes',
+                              CORSRequestHandler._BLOCKED_PREFIXES)
+        (handler._blocked_basenames,
+         handler._blocked_basename_prefixes,
+         handler._blocked_prefixes) = CORSRequestHandler._setup_blocked_sets(
+            basenames, prefix_tup, prefixes)
         return handler
 
     def assert_blocked(self, path, **kwargs):
@@ -192,10 +193,16 @@ class TestPathBlocking(unittest.TestCase):
         self.assertIn(result, (True, False))
 
     def test_null_byte_path_rejected(self):
-        """Null byte injection must not crash."""
+        """Null byte injection must be blocked, never allowed silently."""
+        # Call _is_path_blocked directly — may crash OR return True, but
+        # must NEVER return False (silently allowed).
         h = self._make_handler('/\x00.env')
-        result = h._is_path_blocked()
-        self.assertIn(result, (True, False))
+        try:
+            result = h._is_path_blocked()
+        except Exception:
+            result = True  # crash is acceptable — path is blocked
+        self.assertTrue(result,
+                        "Null-byte path must be blocked, not allowed")
 
     # ------------------------------------------------------------------
     # M5 — injectable blocked sets (testing seam)
@@ -300,6 +307,102 @@ class TestPathBlocking(unittest.TestCase):
         """REPO_ROOT must be the canonical realpath (R10 fix)."""
         from web.server import REPO_ROOT
         self.assertEqual(REPO_ROOT, os.path.realpath(REPO_ROOT))
+
+    # ------------------------------------------------------------------
+    # R12 — integration tests: do_GET, do_HEAD, do_OPTIONS, end_headers,
+    # translate_path fallback containment
+    # ------------------------------------------------------------------
+    def test_do_get_blocks_sensitive_path(self):
+        """do_GET must not call super().do_GET() on blocked paths."""
+        h = self._make_handler('/.env')
+        h.do_GET()
+        h.send_error.assert_called_once_with(403, "Forbidden")
+
+    def test_do_head_blocks_sensitive_path(self):
+        """do_HEAD must not call super().do_HEAD() on blocked paths."""
+        h = self._make_handler('/.env')
+        h.do_HEAD()
+        h.send_error.assert_called_once_with(403, "Forbidden")
+
+    def test_do_options_blocks_sensitive_path(self):
+        """do_OPTIONS must block the same paths as do_GET/do_HEAD."""
+        h = self._make_handler('/.env')
+        h.do_OPTIONS()
+        h.send_error.assert_called_once_with(403, "Forbidden")
+
+    def test_do_get_allows_safe_path(self):
+        """do_GET must NOT call send_error on allowed paths (gate passes)."""
+        h = self._make_handler('/web/index.html')
+        # Verify the gate: _is_path_blocked() returns False for safe paths.
+        # do_GET() calls super().do_GET() after the gate, which requires a
+        # real request/response stack — testing the gate in isolation is
+        # equivalent and avoids mocking the entire stdlib HTTP pipeline.
+        self.assertFalse(h._is_path_blocked())
+        h.send_error.assert_not_called()
+
+    def test_end_headers_tiles_get_immutable_cache(self):
+        """Tile paths must receive immutable Cache-Control."""
+        h = self._make_handler('/data/tiles/file.pmtiles')
+        h.request_version = 'HTTP/1.1'
+        h.connection = MagicMock()
+        h.wfile = MagicMock()
+        h._headers_buffer = []
+        headers = {}
+
+        def capture_header(name, value):
+            headers[name] = value
+        h.send_header = capture_header
+        h.end_headers()
+        self.assertIn('Cache-Control', headers)
+        self.assertIn('immutable', headers['Cache-Control'])
+
+    def test_end_headers_non_tiles_get_no_store(self):
+        """Non-tile paths must receive no-store Cache-Control."""
+        h = self._make_handler('/web/index.html')
+        h.request_version = 'HTTP/1.1'
+        h.connection = MagicMock()
+        h.wfile = MagicMock()
+        h._headers_buffer = []
+        headers = {}
+
+        def capture_header(name, value):
+            headers[name] = value
+        h.send_header = capture_header
+        h.end_headers()
+        self.assertIn('Cache-Control', headers)
+        self.assertIn('no-store', headers['Cache-Control'])
+
+    def test_end_headers_query_string_not_tile_match(self):
+        """Query strings containing /data/tiles/ must not trigger tile cache."""
+        h = self._make_handler('/web/index.html?ref=/data/tiles/')
+        h.request_version = 'HTTP/1.1'
+        h.connection = MagicMock()
+        h.wfile = MagicMock()
+        h._headers_buffer = []
+        headers = {}
+
+        def capture_header(name, value):
+            headers[name] = value
+        h.send_header = capture_header
+        h.end_headers()
+        self.assertIn('Cache-Control', headers)
+        self.assertIn('no-store', headers['Cache-Control'])
+
+    def test_translate_path_fallback_containment(self):
+        """translate_path() fallback must block traversal (containment check)."""
+        h = self._make_handler('/web/index.html')
+        # No _is_path_blocked() call — simulate fallback code path.
+        result = h.translate_path('/../../../etc/passwd')
+        # Must resolve to REPO_ROOT (containment failed), not the real /etc.
+        from web.server import REPO_ROOT
+        self.assertEqual(result, REPO_ROOT)
+
+    def test_translate_path_root_returns_repo_root(self):
+        """translate_path('/') must return REPO_ROOT."""
+        h = self._make_handler('/')
+        result = h.translate_path('/')
+        from web.server import REPO_ROOT
+        self.assertEqual(result, REPO_ROOT)
 
 
 if __name__ == '__main__':

@@ -36,28 +36,37 @@ class CORSRequestHandler(RangeRequestHandler):
     # Directory prefixes never served.
     _BLOCKED_PREFIXES = ('scripts/', 'tests/', 'archived/', '.git/')
 
+    @classmethod
+    def _setup_blocked_sets(cls, basenames, basename_prefixes, prefixes):
+        """Normalise and validate blocked sets — shared by __init__ and tests."""
+        if isinstance(basenames, str):
+            raise TypeError(
+                'blocked_basenames must be a set/frozenset, not a string')
+        if isinstance(basename_prefixes, str):
+            raise TypeError(
+                'blocked_basename_prefixes must be a tuple, not a string')
+        if isinstance(prefixes, str):
+            raise TypeError(
+                'blocked_prefixes must be a tuple, not a string')
+        return (
+            {b.lower() for b in basenames},
+            tuple(p.lower() for p in basename_prefixes),
+            tuple(p.lower() for p in prefixes),
+        )
+
     def __init__(self, *args, **kwargs):
         # Injectable for testing — pop before passing to base class.
         # Force lowercase for case-insensitive matching (macOS APFS).
         basenames = kwargs.pop('blocked_basenames', self._BLOCKED_BASENAMES)
-        if isinstance(basenames, str):
-            raise TypeError(
-                'blocked_basenames must be a set/frozenset, not a string')
-        self._blocked_basenames = {b.lower() for b in basenames}
         prefix_tup = kwargs.pop(
             'blocked_basename_prefixes', self._BLOCKED_BASENAME_PREFIXES)
-        if isinstance(prefix_tup, str):
-            raise TypeError(
-                'blocked_basename_prefixes must be a tuple, not a string')
-        self._blocked_basename_prefixes = tuple(
-            p.lower() for p in prefix_tup)
         prefixes = kwargs.pop(
             'blocked_prefixes', self._BLOCKED_PREFIXES)
-        if isinstance(prefixes, str):
-            raise TypeError(
-                'blocked_prefixes must be a tuple, not a string')
-        self._blocked_prefixes = tuple(p.lower() for p in prefixes)
-        super().__init__(*args)
+        (self._blocked_basenames,
+         self._blocked_basename_prefixes,
+         self._blocked_prefixes) = self._setup_blocked_sets(
+            basenames, prefix_tup, prefixes)
+        super().__init__(*args, **kwargs)
 
     def _is_path_blocked(self):
         """Return True if self.path is blocked (403 already sent).
@@ -72,7 +81,8 @@ class CORSRequestHandler(RangeRequestHandler):
         clean = decoded.lstrip('/')
 
         if not clean:
-            return False  # root — allow directory listing
+            self._resolved_path = REPO_ROOT  # cache root for translate_path
+            return False
 
         # Single realpath() syscall per request (catches symlinks, case
         # differences, .. traversal, and Unicode normalisation in one shot).
@@ -88,8 +98,12 @@ class CORSRequestHandler(RangeRequestHandler):
             self.send_error(403, "Forbidden")
             return True
 
-        rel = os.path.relpath(resolved, REPO_ROOT)
-        basename_lower = os.path.basename(rel).lower()
+        try:
+            rel = os.path.relpath(resolved, REPO_ROOT)
+            basename_lower = os.path.basename(rel).lower()
+        except (OSError, ValueError):
+            self.send_error(403, "Forbidden")
+            return True
 
         # Exact basename block (case-insensitive).
         if basename_lower in self._blocked_basenames:
@@ -117,18 +131,24 @@ class CORSRequestHandler(RangeRequestHandler):
 
         Overrides SimpleHTTPRequestHandler.translate_path() which uses
         os.getcwd() (process-global mutable state).  When _is_path_blocked()
-        has already resolved the path we return the cached value directly,
-        eliminating a wasteful second realpath() syscall.
+        has already resolved the path we return the cached value directly.
         """
         cached = getattr(self, '_resolved_path', None)
         if cached is not None:
-            del self._resolved_path  # one-shot — prevent cross-request leak
+            del self._resolved_path
             return cached
-        # Fallback (do_GET/do_HEAD always call _is_path_blocked first, so
-        # this path is only reached by direct translate_path() callers).
+        # Fallback — guarded with same containment as _is_path_blocked().
         path = path.split('?', 1)[0].split('#', 1)[0]
-        path = unquote(path)
-        return os.path.realpath(os.path.join(REPO_ROOT, path.lstrip('/')))
+        path = unquote(path).lstrip('/')
+        if not path:
+            return REPO_ROOT
+        try:
+            resolved = os.path.realpath(os.path.join(REPO_ROOT, path))
+        except (OSError, ValueError):
+            return REPO_ROOT
+        if os.path.commonpath([resolved, REPO_ROOT]) != REPO_ROOT:
+            return REPO_ROOT
+        return resolved
 
     def do_GET(self):
         if self._is_path_blocked():
@@ -140,11 +160,16 @@ class CORSRequestHandler(RangeRequestHandler):
             return
         super().do_HEAD()
 
+    def do_OPTIONS(self):
+        if self._is_path_blocked():
+            return
+        super().do_OPTIONS()
+
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
         # Immutable cache for PMTiles tile data; no-store for everything else.
-        if '/data/tiles/' in self.path:
+        if self.path.split('?')[0].startswith('/data/tiles/'):
             self.send_header('Cache-Control',
                              'public, max-age=31536000, immutable')
         else:
