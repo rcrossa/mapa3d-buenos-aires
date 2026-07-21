@@ -22,10 +22,10 @@
 
   var finalUrl = queryUrl || defaultUrl;
 
-  // Normalize: replace pmtiles:// with https:// (pmtiles fetches over HTTP).
+  // Normalize: strip pmtiles:// protocol prefix (MapLibre protocol marker).
   // index.html unconditionally prepends pmtiles:// for the MapLibre protocol.
   if (finalUrl && finalUrl.startsWith('pmtiles://')) {
-    finalUrl = finalUrl.replace('pmtiles://', 'https://');
+    finalUrl = 'https://' + finalUrl.slice('pmtiles://'.length);
   }
 
   // Validate: only allow http/https schemes (pmtiles:// already stripped above).
